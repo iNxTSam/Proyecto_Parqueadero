@@ -1,177 +1,143 @@
 @extends('layouts.app')
 
-@section('title', 'Gestión de Bahías')
+@section('title', 'Bahías')
+@section('subtitle', 'Capacidad instalada del parqueadero')
+@section('page', 'superadmin-bahias')
 
 @section('content')
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Gestión de Bahías</h2>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#nuevaBahiaModal">+ Nueva Bahía</button>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <span class="badge text-bg-light border">{{ $bahias->total() }} bahías</span>
+        <button class="btn btn-primary" id="btnNuevaBahia" data-bs-toggle="modal" data-bs-target="#modalBahia">
+            <i class="bi bi-plus-lg me-1"></i> Nueva bahía
+        </button>
     </div>
 
-    <div class="card shadow">
-        <div class="card-body table-responsive">
-            <table class="table table-striped align-middle">
-                <thead class="table-dark">
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
                     <tr>
                         <th>Número</th>
-                        <th>Tipo Vehículo</th>
-                        <th>Capacidad Máxima</th>
+                        <th>Tipo de vehículo</th>
+                        <th class="text-end">Capacidad</th>
+                        <th class="text-end">Vehículos del tipo</th>
                         <th>Ubicación</th>
-                        <th>Ocupada</th>
-                        <th>Activa</th>
-                        <th>Acciones</th>
+                        <th>Estado</th>
+                        <th class="text-end">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($bahias as $bahia)
+                    @forelse($bahias as $bahia)
                         <tr>
-                            <td>{{ $bahia->numero }}</td>
-                            <td>{{ $bahia->tipo_vehiculo_nombre }}</td>
-                            <td>{{ $bahia->capacidad_maxima }}</td>
-                            <td>{{ $bahia->ubicacion ?? '------' }}</td>
-                            <td>
-                                @if($bahia->ocupada >= $bahia->capacidad_maxima)
-                                    <span class="badge bg-danger">Sí</span>
-                                @else
-                                    <span class="badge bg-success">No</span>
-                                @endif
-                            </td>
+                            <td class="fw-semibold">{{ $bahia->numero }}</td>
+                            <td>{{ $bahia->tipoVehiculo?->nombre }}</td>
+                            <td class="text-end">{{ $bahia->capacidad_maxima }}</td>
+                            <td class="text-end">{{ (int) ($ocupados[$bahia->tipo_vehiculo_id] ?? 0) }}</td>
+                            <td>{{ $bahia->ubicacion ?? '—' }}</td>
                             <td>
                                 @if($bahia->activa)
-                                    <span class="badge bg-success">Sí</span>
+                                    <span class="badge text-bg-success">Activa</span>
                                 @else
-                                    <span class="badge bg-secondary">No</span>
+                                    <span class="badge text-bg-secondary">Inactiva</span>
                                 @endif
                             </td>
-                            <td>
-                                <button class="btn btn-warning btn-sm editar-bahia" data-bs-toggle="modal"
-                                    data-bs-target="#editarBahiaModal" data-id="{{ $bahia->id }}"
-                                    data-numero="{{ $bahia->numero }}" data-tipo-vehiculo="{{ $bahia->tipo_vehiculo_id }}"
-                                    data-capacidad="{{ $bahia->capacidad_maxima }}" data-ubicacion="{{ $bahia->ubicacion }}"
-                                    data-activa="{{ $bahia->activa }}">
-                                    Editar
+                            <td class="text-end text-nowrap">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#modalBahia"
+                                    data-numero="{{ $bahia->numero }}"
+                                    data-tipo="{{ $bahia->tipo_vehiculo_id }}"
+                                    data-capacidad="{{ $bahia->capacidad_maxima }}"
+                                    data-ubicacion="{{ $bahia->ubicacion }}"
+                                    data-activa="{{ $bahia->activa ? '1' : '0' }}"
+                                    data-action="{{ route('superadmin.bahias.update', $bahia) }}"
+                                >
+                                    <i class="bi bi-pencil"></i>
                                 </button>
 
-                                <button class="btn btn-danger btn-sm eliminar-bahia" data-bs-toggle="modal"
-                                    data-bs-target="#eliminarBahiaModal" data-id="{{ $bahia->id }}">
-                                    Eliminar
-                                </button>
+                                <form action="{{ route('superadmin.bahias.delete', $bahia) }}" method="post" class="d-inline" data-confirm="¿Eliminar la bahía {{ $bahia->numero }}?">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
                             </td>
                         </tr>
-                    @endforeach
+                    @empty
+                        <tr>
+                            <td colspan="7">
+                                <x-empty-state icon="bi-grid-3x3-gap" title="Sin bahías" text="Crea la primera bahía del parqueadero." />
+                            </td>
+                        </tr>
+                    @endforelse
                 </tbody>
             </table>
         </div>
-    </div>
 
-    <!-- Modal Nueva Bahía -->
-    <div class="modal fade" id="nuevaBahiaModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <form id="form" action="{{ route('superadmin.bahias.store') }}" method="POST">
-                    @csrf
-                    <div class="modal-header">
-                        <h5 class="modal-title">Nueva Bahía</h5>
-                        <button type="button" onclick="limpiarFormulario()" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <input type="text" name="numero" class="form-control mb-2" placeholder="Número" required>
-                        <select name="tipo_vehiculo_id" class="form-control mb-2" required>
-                            <option value="">Seleccione tipo de vehículo</option>
-                            @foreach($tipos_vehiculo as $tipo)
-                                <option value="{{ $tipo->id }}">{{ $tipo->nombre }}</option>
-                            @endforeach
-                        </select>
-                        <input type="number" name="capacidad_maxima" class="form-control mb-2"
-                            placeholder="Capacidad Máxima" required>
-                        <input type="text" name="ubicacion" class="form-control mb-2" placeholder="Ubicación (opcional)">
-                    </div>
-                    <div class="modal-footer">
-                        <button type="submit" class="btn btn-success">Guardar</button>
-                    </div>
-                </form>
+        @if($bahias->hasPages())
+            <div class="card-footer bg-white border-top-0">
+                {{ $bahias->links() }}
             </div>
-        </div>
+        @endif
     </div>
 
-    <!-- Modal Editar Bahía -->
-    <div class="modal fade" id="editarBahiaModal" tabindex="-1">
-        <div class="modal-dialog">
+    <div class="modal fade" id="modalBahia" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <form id="formEditarBahia" method="POST">
-                    @csrf @method('PUT')
+                <form id="formBahia" method="post" action="{{ route('superadmin.bahias.store') }}" data-store-action="{{ route('superadmin.bahias.store') }}">
+                    @csrf
+                    <div id="bahiaMethod"></div>
+
                     <div class="modal-header">
-                        <h5 class="modal-title">Editar Bahía</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <h5 class="modal-title" id="tituloBahia">Nueva bahía</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                     </div>
+
                     <div class="modal-body">
-                        <input type="hidden" id="edit-id">
-                        <input type="text" id="edit-numero" name="numero" class="form-control mb-2" required>
-                        <select id="edit-tipo-vehiculo" name="tipo_vehiculo_id" class="form-control mb-2" required>
-                            @foreach($tipos_vehiculo as $tipo)
-                                <option value="{{ $tipo->id }}">{{ $tipo->nombre }}</option>
-                            @endforeach
-                        </select>
-                        <input type="number" id="edit-capacidad" name="capacidad_maxima" class="form-control mb-2" required>
-                        <input type="text" id="edit-ubicacion" name="ubicacion" class="form-control mb-2">
-                        <div class="form-check">
-                            <input type="checkbox" id="edit-activa" name="activa" value="1" class="form-check-input">
-                            <label for="edit-activa" class="form-check-label">Activa</label>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label" for="bahiaNumero">Número *</label>
+                                <input type="text" class="form-control" id="bahiaNumero" name="numero" required maxlength="10">
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="bahiaTipo">Tipo de vehículo *</label>
+                                <select class="form-select" id="bahiaTipo" name="tipo_vehiculo_id" required>
+                                    @foreach($tipos as $tipo)
+                                        <option value="{{ $tipo->id }}">{{ $tipo->nombre }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="bahiaCapacidad">Capacidad *</label>
+                                <input type="number" min="1" max="500" class="form-control" id="bahiaCapacidad" name="capacidad_maxima" required>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="bahiaActiva">Estado</label>
+                                <select class="form-select" id="bahiaActiva" name="activa">
+                                    <option value="1">Activa</option>
+                                    <option value="0">Inactiva</option>
+                                </select>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label" for="bahiaUbicacion">Ubicación</label>
+                                <input type="text" class="form-control" id="bahiaUbicacion" name="ubicacion" maxlength="100">
+                            </div>
                         </div>
                     </div>
+
                     <div class="modal-footer">
-                        <button type="submit" class="btn btn-success">Actualizar</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-
-    <!-- Modal Eliminar Bahía -->
-    <div class="modal fade" id="eliminarBahiaModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <form id="formEliminarBahia" method="POST">
-                    @csrf @method('DELETE')
-                    <div class="modal-header">
-                        <h5 class="modal-title">Eliminar bahia</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <p>¿Desea confirmar que desea eliminar esta bahia?</p>
-                        <input type="hidden" id="delete-id" name="id" value="">
-                    </div>
-                    <div class="modal-footer">
-                        <button type="submit" class="btn btn-danger">Eliminar</button>
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    <script>
-        function limpiarFormulario() {
-            document.getElementById('form').reset();
-        }
-
-        document.querySelectorAll('.editar-bahia').forEach(btn => {
-            btn.addEventListener('click', function () {
-                let id = this.dataset.id;
-                document.getElementById('formEditarBahia').action = `/superadmin/bahias/${id}`;
-                document.getElementById('edit-numero').value = this.dataset.numero;
-                document.getElementById('edit-tipo-vehiculo').value = this.dataset.tipoVehiculo;
-                document.getElementById('edit-capacidad').value = this.dataset.capacidad;
-                document.getElementById('edit-ubicacion').value = this.dataset.ubicacion;
-                document.getElementById('edit-activa').checked = this.dataset.activa == 1;
-            });
-        });
-
-        document.querySelectorAll('.eliminar-bahia').forEach(btn => {
-            btn.addEventListener('click', function () {
-                let id = this.dataset.id;
-                document.getElementById('formEliminarBahia').action = `/superadmin/bahias/eliminar/${id}`;
-                document.getElementById('delete-id').value = id;
-            })
-        })
-    </script>
 @endsection

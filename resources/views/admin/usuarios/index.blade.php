@@ -1,185 +1,172 @@
-@extends('layouts.headerAdmin')
+@extends('layouts.app')
 
-@section('title', 'Gestión de Usuarios')
+@section('title', 'Usuarios')
+@section('subtitle', 'Administradores y vigilantes')
+@section('page', 'admin-usuarios')
 
 @section('content')
-<div class="container py-4">
-  <h3 class="mb-4">Gestión de Usuarios</h3>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <form action="{{ route('admin.usuarios') }}" method="get" class="d-flex gap-2">
+            <input type="search" name="buscar" value="{{ $buscar }}" class="form-control w-auto" placeholder="Nombre, cédula o correo" style="min-width: 260px">
+            <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
+        </form>
 
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <form action="{{ route('admin.usuarios') }}" method="GET" class="d-flex">
-      <input type="text" name="buscar" class="form-control me-2" placeholder="Buscar usuario..." value="{{ request('buscar') }}">
-      <button type="submit" class="btn btn-outline-primary">Buscar</button>
-    </form>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalUsuario" id="btnNuevoUsuario">+ Nuevo Usuario</button>
-  </div>
-
-  <div class="table-responsive">
-    <table class="table table-striped align-middle text-center">
-      <thead class="table-dark">
-        <tr>
-          <th>Nombre</th>
-          <th>Cédula</th>
-          <th>Carnet</th>
-          <th>Correo</th>
-          <th>Contacto</th>
-          <th>Rol</th>
-          <th>Activo</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        @forelse($usuarios as $usuario)
-        <tr>
-          <td>{{ $usuario->nombre }}</td>
-          <td>{{ $usuario->cedula }}</td>
-          <td>{{ $usuario->carnet ?? '—' }}</td>
-          <td>{{ $usuario->email ?? '—' }}</td>
-          <td>{{ $usuario->contacto ?? '—' }}</td>
-          <td>{{ $usuario->rol->nombre ?? '—' }}</td>
-          <td>
-            @if($usuario->activo)
-              <span class="badge bg-success">Sí</span>
-            @else
-              <span class="badge bg-danger">No</span>
-            @endif
-          </td>
-          <td>
-            <button 
-              class="btn btn-warning btn-sm editarUsuario"
-              data-id="{{ $usuario->id }}"
-              data-nombre="{{ $usuario->nombre }}"
-              data-cedula="{{ $usuario->cedula }}"
-              data-carnet="{{ $usuario->carnet }}"
-              data-email="{{ $usuario->email }}"
-              data-contacto="{{ $usuario->contacto }}"
-              data-rol="{{ $usuario->rol_id }}"
-              data-activo="{{ $usuario->activo }}"
-              data-bs-toggle="modal"
-              data-bs-target="#modalUsuario">
-              Editar
-            </button>
-          </td>
-        </tr>
-        @empty
-        <tr>
-          <td colspan="8" class="text-center text-muted">No se encontraron usuarios.</td>
-        </tr>
-        @endforelse
-      </tbody>
-    </table>
-  </div>
-</div>
-
-
-<div class="modal fade" id="modalUsuario" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <form id="form" method="POST">
-        @csrf
-        <input type="hidden" name="id" id="usuarioId">
-
-        <div class="modal-header bg-dark text-white">
-          <h5 class="modal-title" id="tituloModal">Nuevo Usuario</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-        </div>
-
-        <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">Nombre *</label>
-            <input type="text" name="nombre" id="usuarioNombre" class="form-control" required>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Número de Documento *</label>
-            <input type="text" name="cedula" id="usuarioCedula" class="form-control" required>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Correo</label>
-            <input type="email" name="email" id="usuarioEmail" class="form-control">
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Contacto</label>
-            <input type="text" name="contacto" id="usuarioContacto" class="form-control">
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Rol *</label>
-            <select name="rol_id" id="usuarioRol" class="form-select" required>
-              <option value="">Seleccion el rol</option>
-              @foreach($roles as $rol)
-                <option value="{{ $rol->id }}">{{ $rol->nombre }}</option>
-              @endforeach
-            </select>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Activo *</label>
-            <select name="activo" id="usuarioActivo" class="form-select">
-              <option value="1">Sí</option>
-              <option value="0">No</option>
-            </select>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Contraseña *</label>
-            <input type="password" name="password" id="usuarioPassword" class="form-control" required>
-          </div>
-
-        </div>
-
-        <div class="modal-footer">
-          <button type="submit" class="btn btn-success">Guardar</button>
-        </div>
-      </form>
+        <button class="btn btn-primary" id="btnNuevoUsuario" data-bs-toggle="modal" data-bs-target="#modalUsuario">
+            <i class="bi bi-plus-lg me-1"></i> Nuevo usuario
+        </button>
     </div>
-  </div>
-</div>
 
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  const modal = document.getElementById('modalUsuario');
-  const form = document.getElementById('form');
-  const titulo = document.getElementById('tituloModal');
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Cédula</th>
+                        <th>Rol</th>
+                        <th>Contacto</th>
+                        <th>Estado</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($usuarios as $usuario)
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="avatar-sm">{{ mb_substr($usuario->nombre, 0, 1) }}</span>
+                                    <div>
+                                        <div class="fw-semibold">{{ $usuario->nombre }}</div>
+                                        <div class="text-muted small">{{ $usuario->email ?? 'Sin correo' }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>{{ $usuario->cedula }}</td>
+                            <td><span class="badge text-bg-light border">{{ $usuario->rol?->nombre }}</span></td>
+                            <td>{{ $usuario->contacto ?? '—' }}</td>
+                            <td>
+                                @if($usuario->activo)
+                                    <span class="badge text-bg-success">Activo</span>
+                                @else
+                                    <span class="badge text-bg-danger">Inactivo</span>
+                                @endif
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#modalUsuario"
+                                    data-id="{{ $usuario->id }}"
+                                    data-nombre="{{ $usuario->nombre }}"
+                                    data-cedula="{{ $usuario->cedula }}"
+                                    data-carnet="{{ $usuario->carnet }}"
+                                    data-email="{{ $usuario->email }}"
+                                    data-contacto="{{ $usuario->contacto }}"
+                                    data-rol="{{ $usuario->rol_id }}"
+                                    data-activo="{{ $usuario->activo ? '1' : '0' }}"
+                                    data-action="{{ route('admin.usuarios.update', $usuario) }}"
+                                >
+                                    <i class="bi bi-pencil"></i>
+                                </button>
 
-  modal.addEventListener('show.bs.modal', function (event) {
-    const button = event.relatedTarget;
+                                <form action="{{ route('admin.usuarios.toggle', $usuario) }}" method="post" class="d-inline" data-confirm="¿Cambiar el estado de {{ $usuario->nombre }}?">
+                                    @csrf
+                                    @method('PATCH')
+                                    <button type="submit" class="btn btn-sm {{ $usuario->activo ? 'btn-outline-danger' : 'btn-outline-success' }}">
+                                        <i class="bi {{ $usuario->activo ? 'bi-person-x' : 'bi-person-check' }}"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="6">
+                                <x-empty-state icon="bi-people" title="Sin usuarios" text="Crea el primer administrador o vigilante." />
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
 
+        @if($usuarios->hasPages())
+            <div class="card-footer bg-white border-top-0">
+                {{ $usuarios->links() }}
+            </div>
+        @endif
+    </div>
 
-    if (button && button.dataset.id) {
-      titulo.textContent = 'Editar Usuario';
-      form.action = `/admin/usuarios/${button.dataset.id}`;
-      form.method = 'POST';
-      if (!form.querySelector('input[name="_method"]')) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = '_method';
-        input.value = 'PUT';
-        form.appendChild(input);
-      }
-      form.querySelector('#usuarioId').value = button.dataset.id;
-      form.querySelector('#usuarioNombre').value = button.dataset.nombre || '';
-      form.querySelector('#usuarioCedula').value = button.dataset.cedula || '';
-      form.querySelector('#usuarioCarnet').value = button.dataset.carnet || '';
-      form.querySelector('#usuarioEmail').value = button.dataset.email || '';
-      form.querySelector('#usuarioContacto').value = button.dataset.contacto || '';
-      form.querySelector('#usuarioRol').value = button.dataset.rol || '';
-      form.querySelector('#usuarioActivo').value = button.dataset.activo || '1';
-      form.querySelector('#usuarioPassword').removeAttribute('required');
-    } else {
-      titulo.textContent = 'Nuevo Usuario';
-      form.action = "{{ route('admin.usuarios.store') }}";
-      const methodInput = form.querySelector('input[name="_method"]');
-      if (methodInput) methodInput.remove();
-      form.reset();
-      form.querySelector('#usuarioPassword').setAttribute('required', true);
+    <div class="modal fade" id="modalUsuario" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form id="formUsuario" method="post" action="{{ route('admin.usuarios.store') }}" data-store-action="{{ route('admin.usuarios.store') }}">
+                    @csrf
+                    <div id="usuarioMethod"></div>
 
-    }
-  });
-});
-</script>
-<script src="{{ asset('js/app.js') }}"></script>
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="tituloUsuario">Nuevo usuario</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
 
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label" for="usuarioNombre">Nombre completo *</label>
+                                <input type="text" class="form-control" id="usuarioNombre" name="nombre" required>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="usuarioCedula">Documento *</label>
+                                <input type="text" class="form-control" id="usuarioCedula" name="cedula" required>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="usuarioCarnet">Carnet</label>
+                                <input type="text" class="form-control" id="usuarioCarnet" name="carnet">
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="usuarioEmail">Correo</label>
+                                <input type="email" class="form-control" id="usuarioEmail" name="email">
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="usuarioContacto">Contacto</label>
+                                <input type="text" class="form-control" id="usuarioContacto" name="contacto">
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="usuarioRol">Rol *</label>
+                                <select class="form-select" id="usuarioRol" name="rol_id" required>
+                                    @foreach($roles as $rol)
+                                        <option value="{{ $rol->id }}">{{ $rol->nombre }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="usuarioActivo">Estado</label>
+                                <select class="form-select" id="usuarioActivo" name="activo">
+                                    <option value="1">Activo</option>
+                                    <option value="0">Inactivo</option>
+                                </select>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label" for="usuarioPassword">Contraseña <span id="passwordHint" class="text-muted fw-normal"></span></label>
+                                <input type="password" class="form-control" id="usuarioPassword" name="password" autocomplete="new-password">
+                                <div class="form-text">Mínimo 8 caracteres.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 @endsection

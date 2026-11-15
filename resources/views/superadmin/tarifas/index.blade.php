@@ -1,178 +1,155 @@
 @extends('layouts.app')
 
-@section('title', 'Gestión de Tarifas')
+@section('title', 'Tarifas')
+@section('subtitle', 'Precios por tipo de vehículo y periodo')
+@section('page', 'superadmin-tarifas')
 
 @section('content')
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Gestión de Tarifas</h2>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#nuevaTarifaModal">+ Nueva Tarifa</button>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <span class="badge text-bg-light border">{{ $tarifas->total() }} tarifas</span>
+        <button class="btn btn-primary" id="btnNuevaTarifa" data-bs-toggle="modal" data-bs-target="#modalTarifa">
+            <i class="bi bi-plus-lg me-1"></i> Nueva tarifa
+        </button>
     </div>
 
-    <div class="card shadow">
-        <div class="card-body table-responsive">
-            <table class="table table-striped align-middle">
-                <thead class="table-dark">
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
                     <tr>
                         <th>Nombre</th>
                         <th>Tipo</th>
-                        <th>Vehículo</th>
-                        <th>Valor</th>
-                        <th>Activa</th>
-                        <th>Acciones</th>
+                        <th>Tipo de vehículo</th>
+                        <th class="text-end">Valor</th>
+                        <th class="text-end">Días</th>
+                        <th>Estado</th>
+                        <th class="text-end">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($tarifas as $tarifa)
+                    @forelse($tarifas as $tarifa)
                         <tr>
-                            <td>{{ $tarifa->nombre }}</td>
-                            <td>{{ $tarifa->tipo }}</td>
-                            <td>{{ $tarifa->tipo_vehiculo_nombre }}</td>
-                            <td>${{ number_format($tarifa->valor, 0, ',', '.') }}</td>
+                            <td class="fw-semibold">{{ $tarifa->nombre }}</td>
+                            <td><span class="badge text-bg-light border">{{ $tarifa->tipo }}</span></td>
+                            <td>{{ $tarifa->tipoVehiculo?->nombre }}</td>
+                            <td class="text-end">${{ number_format((float) $tarifa->valor, 0, ',', '.') }}</td>
+                            <td class="text-end">{{ $tarifa->dias }}</td>
                             <td>
                                 @if($tarifa->activa)
-                                    <span class="badge bg-success">Sí</span>
+                                    <span class="badge text-bg-success">Activa</span>
                                 @else
-                                    <span class="badge bg-danger">No</span>
+                                    <span class="badge text-bg-secondary">Inactiva</span>
                                 @endif
                             </td>
-                            <td>
-                                <button class="btn btn-warning btn-sm editar-tarifa" data-bs-toggle="modal"
-                                    data-bs-target="#editarTarifaModal" data-id="{{ $tarifa->id }}"
-                                    data-nombre="{{ $tarifa->nombre }}" data-tipo="{{ $tarifa->tipo }}"
-                                    data-tipo-vehiculo="{{ $tarifa->tipo_vehiculo_id }}" data-valor="{{ $tarifa->valor }}"
-                                    data-activa="{{ $tarifa->activa }}">
-                                    Editar
+                            <td class="text-end text-nowrap">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#modalTarifa"
+                                    data-id="{{ $tarifa->id }}"
+                                    data-nombre="{{ $tarifa->nombre }}"
+                                    data-tipo="{{ $tarifa->tipo }}"
+                                    data-tipo-vehiculo="{{ $tarifa->tipo_vehiculo_id }}"
+                                    data-valor="{{ $tarifa->valor }}"
+                                    data-dias="{{ $tarifa->dias }}"
+                                    data-activa="{{ $tarifa->activa ? '1' : '0' }}"
+                                    data-action="{{ route('superadmin.tarifas.update', $tarifa) }}"
+                                >
+                                    <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-danger btn-sm elimnar-tarifa" data-bs-toggle="modal"
-                                    data-bs-target="#eliminarTarifaModal" data-id="{{ $tarifa->id }}">
-                                    Eliminar
-                                </button>
+
+                                <form action="{{ route('superadmin.tarifas.delete', $tarifa) }}" method="post" class="d-inline" data-confirm="¿Eliminar la tarifa {{ $tarifa->nombre }}?">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
                             </td>
                         </tr>
-                    @endforeach
+                    @empty
+                        <tr>
+                            <td colspan="7">
+                                <x-empty-state icon="bi-cash-coin" title="Sin tarifas" text="Crea la primera tarifa del parqueadero." />
+                            </td>
+                        </tr>
+                    @endforelse
                 </tbody>
             </table>
         </div>
-    </div>
 
-    <!-- Modal Nueva Tarifa -->
-    <div class="modal fade" id="nuevaTarifaModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <form id="form" action="{{ route('superadmin.tarifas.store') }}" method="POST">
-                    @csrf
-                    <div class="modal-header">
-                        <h5 class="modal-title">Nueva Tarifa</h5>
-                        <button type="button" onclick="limpiarFormulario()" class="btn-close"
-                            data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <input type="text" name="nombre" class="form-control mb-2" placeholder="Nombre" required>
-                        <select name="tipo" class="form-control mb-2" required>
-                            <option value="">Seleccione el tipo (dia,mes, etc)</option>
-                            <option value="Mes">Mensual</option>
-                            <option value="Quincenal">Quincenal</option>
-                            <option value="Semanal">Semanal</option>
-                            <option value="Dia">Día</option>
-                        </select>
-                        <select name="tipo_vehiculo_id" class="form-control mb-2" required>
-                            <option value="">Seleccione tipo de vehículo</option>
-                            @foreach($tipos_vehiculo as $tipo)
-                                <option value="{{ $tipo->id }}">{{ $tipo->nombre }}</option>
-                            @endforeach
-                        </select>
-                        <input type="number" name="valor" class="form-control mb-2" placeholder="Valor" required>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="submit" class="btn btn-success">Guardar</button>
-                    </div>
-                </form>
+        @if($tarifas->hasPages())
+            <div class="card-footer bg-white border-top-0">
+                {{ $tarifas->links() }}
             </div>
-        </div>
+        @endif
     </div>
 
-    <!-- Modal Editar Tarifa -->
-    <div class="modal fade" id="editarTarifaModal" tabindex="-1">
-        <div class="modal-dialog">
+    <div class="modal fade" id="modalTarifa" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <form id="formEditarTarifa" method="POST">
-                    @csrf @method('PUT')
+                <form id="formTarifa" method="post" action="{{ route('superadmin.tarifas.store') }}" data-store-action="{{ route('superadmin.tarifas.store') }}">
+                    @csrf
+                    <div id="tarifaMethod"></div>
+
                     <div class="modal-header">
-                        <h5 class="modal-title">Editar Tarifa</h5>
-                        <button type="button" onclick="limpiarFormulario()" class="btn-close" data-bs-dismiss="modal"></button>
+                        <h5 class="modal-title" id="tituloTarifa">Nueva tarifa</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                     </div>
+
                     <div class="modal-body">
-                        <input type="hidden" id="edit-id">
-                        <input type="text" id="edit-nombre" name="nombre" class="form-control mb-2" required>
-                        <select name="tipo" id="edit-tipo" class="form-control mb-2" required>
-                            <option>Seleccione el tipo (dia,mes, etc)</option>
-                            <option value="Mes">Mensual</option>
-                            <option value="Quincenal">Quincenal</option>
-                            <option value="Semanal">Semanal</option>
-                            <option value="Dia">Día</option>
-                        </select>
-                        <select id="edit-tipo-vehiculo" name="tipo_vehiculo_id" class="form-control mb-2" required>
-                            @foreach($tipos_vehiculo as $tipo)
-                                <option value="{{ $tipo->id }}">{{ $tipo->nombre }}</option>
-                            @endforeach
-                        </select>
-                        <input type="number" id="edit-valor" name="valor" class="form-control mb-2" required>
-                        <div class="form-check">
-                            <input type="checkbox" id="edit-activa" name="activa" value="1" class="form-check-input">
-                            <label for="edit-activa" class="form-check-label">Activa</label>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label" for="tarifaNombre">Nombre *</label>
+                                <input type="text" class="form-control" id="tarifaNombre" name="nombre" required maxlength="50">
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="tarifaTipo">Tipo *</label>
+                                <select class="form-select" id="tarifaTipo" name="tipo" required>
+                                    <option value="Dia">Día</option>
+                                    <option value="Semana">Semana</option>
+                                    <option value="Quincena">Quincena</option>
+                                    <option value="Mes">Mes</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="tarifaTipoVehiculo">Tipo de vehículo *</label>
+                                <select class="form-select" id="tarifaTipoVehiculo" name="tipo_vehiculo_id" required>
+                                    @foreach($tipos as $tipo)
+                                        <option value="{{ $tipo->id }}">{{ $tipo->nombre }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="tarifaValor">Valor *</label>
+                                <input type="number" step="0.01" min="0" class="form-control" id="tarifaValor" name="valor" required>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label" for="tarifaDias">Duración (días) *</label>
+                                <input type="number" min="1" max="365" class="form-control" id="tarifaDias" name="dias" required>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label" for="tarifaActiva">Estado</label>
+                                <select class="form-select" id="tarifaActiva" name="activa">
+                                    <option value="1">Activa</option>
+                                    <option value="0">Inactiva</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
+
                     <div class="modal-footer">
-                        <button type="submit" class="btn btn-success">Actualizar</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-
-    <!-- Modal eliminar Tarifa -->
-    <div class="modal fade" id="eliminarTarifaModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <form id="formEliminarTarifa" method="POST">
-                    @csrf @method('DELETE')
-                    <div class="modal-header">
-                        <h5 class="modal-title">Eliminar Tarifa</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <p>¿Estás seguro de que deseas eliminar esta tarifa?</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="submit" class="btn btn-danger">Aceptar</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <script>
-
-        function limpiarFormulario() {
-            document.getElementById('form').reset();
-        }
-
-        document.querySelectorAll('.editar-tarifa').forEach(btn => {
-            btn.addEventListener('click', function () {
-                let id = this.dataset.id;
-                document.getElementById('formEditarTarifa').action = `/superadmin/tarifas/${id}`;
-                document.getElementById('edit-nombre').value = this.dataset.nombre;
-                document.getElementById('edit-tipo').value = this.dataset.tipo;
-                document.getElementById('edit-tipo-vehiculo').value = this.dataset.tipoVehiculo;
-                document.getElementById('edit-valor').value = this.dataset.valor;
-                document.getElementById('edit-activa').checked = (this.dataset.activa == 1);
-            });
-        });
-        document.querySelectorAll('.elimnar-tarifa').forEach(btn => {
-            btn.addEventListener('click', function () {
-                let id = this.dataset.id;
-                document.getElementById('formEliminarTarifa').action = `/superadmin/tarifas/eliminar/${id}`;
-            });
-        });
-    </script>
 @endsection

@@ -1,223 +1,235 @@
-@extends('layouts.headerAdmin')
+@extends('layouts.app')
 
-@section('title', 'Gestión de Contratos')
+@section('title', 'Contratos')
+@section('subtitle', 'Planes de parqueadero por vehículo')
+@section('page', 'admin-contratos')
 
 @section('content')
-  <div class="container py-4">
-    <h3 class="mb-4">Gestión de Contratos</h3>
-
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <form action="{{ route('admin.contratos') }}" method="GET" class="d-flex">
-        <input type="text" name="buscar" class="form-control me-2" placeholder="Buscar contrato..."
-          value="{{ request('buscar') }}">
-        <button type="submit" class="btn btn-outline-primary">Buscar</button>
-      </form>
-      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuevoContrato">
-        + Nuevo Contrato
-      </button>
-    </div>
-
-    <div class="table-responsive">
-      <table class="table table-striped text-center align-middle">
-        <thead class="table-dark">
-          <tr>
-            <th>Propietario</th>
-            <th>Documento</th>
-            <th>Vehículo</th>
-            <th>Inicio</th>
-            <th>Fin</th>
-            <th>Valor</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          @forelse($contratos as $contrato)
-            <tr>
-              <td>{{ $contrato->propietario }}</td>
-              <td>{{ $contrato->cedula }}</td>
-              <td>{{ $contrato->vehiculo }}</td>
-              <td>{{ \Carbon\Carbon::parse($contrato->fecha_inicio)->format('d/m/Y') }}</td>
-              <td>{{ \Carbon\Carbon::parse($contrato->fecha_fin)->format('d/m/Y') }}</td>
-              <td>${{ number_format($contrato->valor_total, 0, ',', '.') }}</td>
-              <td>
-                <span class="badge bg-secondary">{{ ucfirst($contrato->estado) }}</span>
-              </td>
-              <td>
-                <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#modalEditarContrato"
-                  data-id="{{ $contrato->id }}" data-observaciones="{{ $contrato->observaciones }}"
-                  data-valor="{{ $contrato->valor_total}}" data-estado="{{ $contrato->estado_id }}"
-                   data-vehiculo="{{ $contrato->vehiculo }}">
-                  Editar
-                </button>
-              </td>
-            </tr>
-          @empty
-            <tr>
-              <td colspan="8" class="text-center text-muted">No hay contratos registrados.</td>
-            </tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-
-
-  <div class="modal fade" id="modalNuevoContrato" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <form id="form" action="{{ route('admin.contratos.store') }}" method="POST">
-          @csrf
-          <div class="modal-header bg-dark text-white">
-            <h5 class="modal-title">Nuevo Contrato</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-              onclick="limpiarFormulario()"></button>
-          </div>
-          <div class="modal-body">
-            <div class="p-1">
-              <label for="propietario">Numero de propietario</label>
-              <input type="text" id="propietario" name="propietario" class="form-control"
-                placeholder="Ingrese el número de documento" required>
-            </div>
-
-            <div class="p-2">
-              <button class="btn btn-dark" onclick="verficarUsuario()" id="btnVerificar">Verificar</button>
-              <label for="propietario">Verificar usuario</label>
-            </div>
-            <div id="textMsg" class="alert mt-2" style="display: none;"></div>
-            <div class="mb-3">
-              <label class="form-label">Vehículo</label>
-              <select name="vehiculo" id="vehiculo" class="form-select" required>
-              </select>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Tarifa</label>
-              <select name="tarifa_id" class="form-select" required>
-                @foreach($tarifas as $t)
-                  <option value="{{ $t->id }}">{{ $t->nombre }} ({{ $t->tipo ?? '—' }})</option>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <form action="{{ route('admin.contratos') }}" method="get" class="d-flex flex-wrap gap-2">
+            <input type="search" name="buscar" value="{{ $buscar }}" class="form-control w-auto" placeholder="Placa o propietario" style="min-width: 220px">
+            <select name="estado" class="form-select w-auto" style="min-width: 170px">
+                <option value="">Todos los estados</option>
+                @foreach($estados as $item)
+                    <option value="{{ $item->id }}" @selected((int) $estado === (int) $item->id)>{{ $item->nombre }}</option>
                 @endforeach
-              </select>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Observaciones</label>
-              <textarea name="observaciones" class="form-control" rows="2"></textarea>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="submit" class="btn btn-success">Guardar Contrato</button>
-          </div>
+            </select>
+            <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-funnel"></i></button>
         </form>
-      </div>
+
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalContrato">
+            <i class="bi bi-plus-lg me-1"></i> Nuevo contrato
+        </button>
     </div>
-  </div>
 
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Vehículo</th>
+                        <th>Propietario</th>
+                        <th>Tarifa</th>
+                        <th>Vigencia</th>
+                        <th class="text-end">Valor</th>
+                        <th>Estado</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($contratos as $contrato)
+                        <tr>
+                            <td class="text-muted">#{{ $contrato->id }}</td>
+                            <td><span class="plate">{{ $contrato->vehiculo_id }}</span></td>
+                            <td>
+                                <div class="fw-semibold">{{ $contrato->propietario?->nombre }}</div>
+                                <div class="text-muted small">{{ $contrato->propietario_id }}</div>
+                            </td>
+                            <td>{{ $contrato->tarifa?->nombre }}</td>
+                            <td class="text-nowrap">
+                                {{ $contrato->fecha_inicio?->format('d/m/Y') }}
+                                <i class="bi bi-arrow-right text-muted mx-1"></i>
+                                {{ $contrato->fecha_fin?->format('d/m/Y') }}
+                            </td>
+                            <td class="text-end">${{ number_format((float) $contrato->valor, 0, ',', '.') }}</td>
+                            <td>
+                                @php($estadoNombre = $contrato->estado?->nombre)
+                                <span class="badge {{ $estadoNombre === 'Activo' ? 'text-bg-success' : ($estadoNombre === 'Cancelado' ? 'text-bg-danger' : 'text-bg-secondary') }}">
+                                    {{ $estadoNombre }}
+                                </span>
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#modalEditarContrato"
+                                    data-action="{{ route('admin.contratos.update', $contrato) }}"
+                                    data-valor="{{ $contrato->valor }}"
+                                    data-estado="{{ $contrato->estado_id }}"
+                                    data-observaciones="{{ $contrato->observaciones }}"
+                                >
+                                    <i class="bi bi-pencil"></i>
+                                </button>
 
-  <div class="modal fade" id="modalEditarContrato" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <form id="formEditarContrato" method="POST">
-          @csrf @method('PUT')
-          <div class="modal-header bg-dark text-white">
-            <h5 class="modal-title">Editar Contrato</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-          </div>
-          <div class="modal-body">
-            <input type="hidden" name="vehiculo" id="editVehiculo">
-            <div class="mb-3">
-              <label class="form-label">Valor Total</label>
-              <input type="number" name="valor_total" id="editValor" class="form-control" required>
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-success"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#modalRenovarContrato"
+                                    data-action="{{ route('admin.contratos.renovar', $contrato) }}"
+                                    data-placa="{{ $contrato->vehiculo_id }}"
+                                    data-tipo="{{ $contrato->vehiculo?->tipo_vehiculo_id }}"
+                                >
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="8">
+                                <x-empty-state icon="bi-file-earmark-text" title="Sin contratos" text="Crea un contrato para un vehículo registrado." />
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+
+        @if($contratos->hasPages())
+            <div class="card-footer bg-white border-top-0">
+                {{ $contratos->links() }}
             </div>
-            <div class="mb-3">
-              <select type="number" name="estado" id="editEstado" class="form-select" required>
-                @foreach ($estados as $estado)
-                <option value="{{ $estado->id }}">{{ $estado->nombre }}</option>
-                @endforeach
-              </select>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Observaciones</label>
-              <textarea name="observaciones" id="editObservaciones" class="form-control" rows="2"></textarea>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="submit" class="btn btn-primary">Actualizar</button>
-          </div>
-        </form>
-      </div>
+        @endif
     </div>
-  </div>
 
-  <script>
-    function verficarUsuario() {
-      const msg = document.getElementById('textMsg');
-      const input = document.getElementById('propietario').value;
-      const btn = document.getElementById('btnVerificar');
-      const select = document.getElementById('vehiculo');
-      if (!input.trim()) {
-        msg.className = 'text text-danger';
-        msg.textContent = 'Por favor ingrese un numero de documento';
-        msg.style.display = 'block';
-        return;
-      }
+    {{-- Nuevo contrato --}}
+    <div class="modal fade" id="modalContrato" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="post" action="{{ route('admin.contratos.store') }}" id="formContrato">
+                    @csrf
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-file-earmark-plus me-1"></i> Nuevo contrato</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
 
-      btn.disabled = true;
-      msg.className = 'text';
-      msg.style.display = 'block';
-      msg.textContent = 'Verificando...';
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label" for="contratoVehiculo">Vehículo *</label>
+                            <select class="form-select" id="contratoVehiculo" name="vehiculo_id" required>
+                                <option value="">Seleccione un vehículo</option>
+                                @foreach($vehiculos as $vehiculo)
+                                    <option value="{{ $vehiculo->placa }}" data-tipo="{{ $vehiculo->tipo_vehiculo_id }}">
+                                        {{ $vehiculo->placa }} · {{ $vehiculo->propietario?->nombre }} ({{ $vehiculo->tipo?->nombre }})
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
 
-      fetch('/admin/contratos/verificar-usuario', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': csrfToken
-        },
-        body: JSON.stringify({
-          propietario: input
-        })
+                        <div class="mb-3">
+                            <label class="form-label" for="contratoTarifa">Tarifa *</label>
+                            <select class="form-select" id="contratoTarifa" name="tarifa_id" required>
+                                <option value="">Seleccione una tarifa</option>
+                                @foreach($tarifas as $tarifa)
+                                    <option value="{{ $tarifa->id }}" data-tipo="{{ $tarifa->tipo_vehiculo_id }}" data-dias="{{ $tarifa->dias }}">
+                                        {{ $tarifa->nombre }} · ${{ number_format((float) $tarifa->valor, 0, ',', '.') }} · {{ $tarifa->dias }} días
+                                    </option>
+                                @endforeach
+                            </select>
+                            <div class="form-text" id="contratoAyuda">Las tarifas se filtran según el tipo de vehículo.</div>
+                        </div>
 
-      }).then(response => response.json())
-        .then(data => {
-          if (data.existe) {
-            msg.className = 'text text-success';
-            msg.textContent = 'Usuario verificado';
-            msg.style.display = 'block';
+                        <div class="mb-0">
+                            <label class="form-label" for="contratoObservaciones">Observaciones</label>
+                            <textarea class="form-control" id="contratoObservaciones" name="observaciones" rows="2" maxlength="1000"></textarea>
+                        </div>
+                    </div>
 
-            select.innerHTML = '<option value="">Seleccione el tipo de vehiculo</option>'
-            if (data.vehiculos) {
-              data.vehiculos.forEach((tipo, index) => {
-                const option = document.createElement('option');
-                option.value = data.placas[index];
-                option.textContent = data.vehiculos[index].nombre + " | " + (data.placas[index] || 'Sin placa');
-                select.appendChild(option);
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Crear contrato</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-              });
-            } else {
-              select.innerHTML = '<option>No se econtraron vehículos</option>'
-            }
-          } else {
-            msg.className = 'text text-danger';
-            msg.textContent = 'Usuario no encontrado';
-            msg.style.display = 'block';
-            select.innerHTML = '<option>No se econtraron vehículos</option>'
-          }
-        })
-        .catch(error => console.error('Error:', error))
-        .finally(() => {
-          btn.disabled = false;
-        });
-    }
-    document.querySelectorAll('[data-bs-target="#modalEditarContrato"]').forEach(btn => {
-      btn.addEventListener('click', function () {
-        document.getElementById('formEditarContrato').action = `/admin/contratos/${this.dataset.id}`;
-        document.getElementById('editVehiculo').value = this.dataset.vehiculo;
-        document.getElementById('editValor').value = this.dataset.valor;
-        document.getElementById('editEstado').value = this.dataset.estado;
-        document.getElementById('editObservaciones').value = this.dataset.observaciones;
-      });
-    });
+    {{-- Editar contrato --}}
+    <div class="modal fade" id="modalEditarContrato" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="post" id="formEditarContrato">
+                    @csrf
+                    @method('PUT')
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-pencil me-1"></i> Editar contrato</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
 
-  </script>
-  <script src="{{ asset('js/limpiarFormulario.js') }}"></script>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label" for="editarValor">Valor *</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="editarValor" name="valor" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="editarEstado">Estado *</label>
+                            <select class="form-select" id="editarEstado" name="estado_id" required>
+                                @foreach($estados as $item)
+                                    <option value="{{ $item->id }}">{{ $item->nombre }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="mb-0">
+                            <label class="form-label" for="editarObservaciones">Observaciones</label>
+                            <textarea class="form-control" id="editarObservaciones" name="observaciones" rows="2" maxlength="1000"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {{-- Renovar contrato --}}
+    <div class="modal fade" id="modalRenovarContrato" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="post" id="formRenovarContrato">
+                    @csrf
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-arrow-repeat me-1"></i> Renovar contrato</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p class="mb-2">Vehículo <span class="plate" id="renovarPlaca"></span></p>
+                        <p class="text-muted small">El contrato actual se finaliza y se crea uno nuevo con la tarifa seleccionada.</p>
+
+                        <label class="form-label" for="renovarTarifa">Nueva tarifa *</label>
+                        <select class="form-select" id="renovarTarifa" name="tarifa_id" required>
+                            <option value="">Seleccione una tarifa</option>
+                            @foreach($tarifas as $tarifa)
+                                <option value="{{ $tarifa->id }}" data-tipo="{{ $tarifa->tipo_vehiculo_id }}">
+                                    {{ $tarifa->nombre }} · ${{ number_format((float) $tarifa->valor, 0, ',', '.') }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-success">Renovar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 @endsection

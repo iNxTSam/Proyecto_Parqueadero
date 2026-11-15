@@ -1,80 +1,95 @@
-@extends('layouts.headerAdmin')
+@extends('layouts.app')
 
-@section('title', 'Dashboard Administrador')
+@section('title', 'Dashboard')
+@section('subtitle', 'Resumen administrativo')
+@section('page', 'admin-dashboard')
 
 @section('content')
-<div class="container py-4">
-  <h3 class="mb-4">Dashboard Administrador</h3>
+    <div class="row g-3 mb-4">
+        <x-stat-card label="Clientes" :value="$stats['clientes']" icon="bi-person-vcard" tone="primary" hint="Registrados en el sistema" />
+        <x-stat-card label="Vehículos" :value="$stats['vehiculos']" icon="bi-car-front" tone="info" hint="Activos e inactivos" />
+        <x-stat-card label="Contratos activos" :value="$stats['contratos_activos']" icon="bi-file-earmark-check" tone="success" hint="Vigentes hoy" />
+        <x-stat-card label="Por vencer (7 días)" :value="$stats['por_vencer']" icon="bi-alarm" tone="warning" hint="Requieren renovación" />
+    </div>
 
-  <h5 class="mb-3">Vencimientos de contratos hoy:</h5>
-  <div class="table-responsive mb-5">
-    <table class="table table-striped table-hover align-middle">
-      <thead class="table-dark">
-        <tr>
-          <th>Nombre</th>
-          <th>Documento</th>
-          <th>Código</th>
-          <th>Vehículo</th>
-          <th>Valor</th>
-          <th>Inicio</th>
-          <th>Fin</th>
-        </tr>
-      </thead>
-      <tbody>
-        @forelse($proximosVencimientos as $contrato)
-          <tr>
-            <td>{{ $contrato->propietario_nombre }}</td>
-            <td>{{ $contrato->propietario_id }}</td>
-            <td>{{ $contrato->id }}</td>
-            <td>{{ $contrato->vehiculo_id }}</td>
-            <td>${{ number_format($contrato->valor, 0, ',', '.') }}</td>
-            <td>{{ \Carbon\Carbon::parse($contrato->fecha_inicio)->format('d/m/Y') }}</td>
-            <td>{{ \Carbon\Carbon::parse($contrato->fecha_fin)->format('d/m/Y') }}</td>
-          </tr>
-        @empty
-          <tr>
-            <td colspan="7" class="text-center text-muted">No hay contratos próximos a vencer hoy.</td>
-          </tr>
-        @endforelse
-      </tbody>
-    </table>
-  </div>
-
-
-  <h5 class="mb-3">Estado de bahías:</h5>
-  <div class="row g-3 mb-4">
-    @forelse($bahias as $bahia)
-      <div class="col-md-3">
-        <div class="card text-center shadow-sm">
-          <div class="card-header fw-bold">{{ $bahia->tipo_vehiculo }}</div>
-          <div class="card-body">
-            <h4 class="card-title">{{ $bahia->ocupadas }}/{{ $bahia->total }}</h4>
-            <p class="card-text">
-              @if($bahia->ocupadas >= $bahia->total)
-                <span class="badge bg-danger">Lleno</span>
-              @else
-                <span class="badge bg-success">Disponible</span>
-              @endif
-            </p>
-          </div>
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-alarm me-1"></i> Próximos vencimientos</span>
+                    <a href="{{ route('admin.contratos') }}" class="small">Ver contratos</a>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Placa</th>
+                                <th>Propietario</th>
+                                <th>Tarifa</th>
+                                <th>Vence</th>
+                                <th class="text-end">Días</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($proximos as $contrato)
+                                <tr>
+                                    <td><span class="plate">{{ $contrato->vehiculo_id }}</span></td>
+                                    <td>{{ $contrato->propietario?->nombre }}</td>
+                                    <td>{{ $contrato->tarifa?->nombre }}</td>
+                                    <td>{{ $contrato->fecha_fin?->format('d/m/Y') }}</td>
+                                    <td class="text-end">
+                                        @php($dias = today()->diffInDays($contrato->fecha_fin, false))
+                                        <span class="badge {{ $dias <= 2 ? 'text-bg-danger' : 'text-bg-warning' }}">{{ $dias }} días</span>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="5">
+                                        <x-empty-state icon="bi-check2-circle" title="Sin vencimientos próximos" text="No hay contratos que venzan en los próximos 7 días." />
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-      </div>
-    @empty
-      <p class="text-muted">No hay bahías registradas.</p>
-    @endforelse
-  </div>
 
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-clock-history me-1"></i> Contratos recientes</span>
+                    <a href="{{ route('admin.contratos') }}" class="small">Ver todos</a>
+                </div>
+                <div class="list-group list-group-flush">
+                    @forelse($recientes as $contrato)
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="fw-semibold">{{ $contrato->vehiculo_id }} · {{ $contrato->propietario?->nombre }}</div>
+                                <div class="text-muted small">{{ $contrato->fecha_inicio?->format('d/m/Y') }} → {{ $contrato->fecha_fin?->format('d/m/Y') }}</div>
+                            </div>
+                            <span class="badge text-bg-light border">{{ $contrato->estado?->nombre }}</span>
+                        </div>
+                    @empty
+                        <div class="list-group-item">
+                            <x-empty-state icon="bi-file-earmark-text" title="Sin contratos" text="Crea el primer contrato desde el módulo de contratos." />
+                        </div>
+                    @endforelse
+                </div>
+            </div>
+        </div>
+    </div>
 
-  <h5 class="mb-3">Notificaciones recientes:</h5>
-  <div class="list-group shadow-sm">
-    @forelse($notificaciones as $notif)
-      <div class="list-group-item d-flex justify-content-between align-items-center">
-        <span>{{ $notif->mensaje }}</span>
-        <small class="text-muted">{{ \Carbon\Carbon::parse($notif->fecha_alerta)->format('h:i A') }}</small>
-      </div>
-    @empty
-      <div class="list-group-item text-center text-muted">Sin notificaciones recientes.</div>
-    @endforelse
-  </div>
-</div>
+    <div class="row g-3 mt-1">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body d-flex flex-wrap gap-2">
+                    <a href="{{ route('admin.usuarios') }}" class="btn btn-outline-primary"><i class="bi bi-people me-1"></i> Gestionar usuarios</a>
+                    <a href="{{ route('admin.clientes') }}" class="btn btn-outline-primary"><i class="bi bi-person-vcard me-1"></i> Gestionar clientes</a>
+                    <a href="{{ route('admin.vehiculos') }}" class="btn btn-outline-primary"><i class="bi bi-car-front me-1"></i> Gestionar vehículos</a>
+                    <a href="{{ route('admin.contratos') }}" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Nuevo contrato</a>
+                </div>
+            </div>
+        </div>
+    </div>
 @endsection
