@@ -1,0 +1,22 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: parqueadero-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: parqueadero
+      MYSQL_USER: parqueadero
+      MYSQL_PASSWORD: parqueadero
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3307:3306"
+    volumes:
+      - parqueadero-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  parqueadero-db:
