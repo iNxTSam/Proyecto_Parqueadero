@@ -1,210 +1,151 @@
 <?php
 
 namespace App\Http\Controllers;
+
+use App\Models\Cliente;
+use App\Models\Contrato;
+use App\Models\EntradaSalida;
 use App\Models\Vehiculo;
+use App\Services\ParqueoService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\View\View;
 
 class VigilanteController extends Controller
 {
-    #VISTA DE DASHBOARD
-    public function dashboard()
+    public function __construct(private readonly ParqueoService $parqueo) {}
+
+    public function dashboard(): View
     {
-        $bahias = DB::table('bahias')
-            ->join('tipos_vehiculo', 'bahias.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-            ->select('bahias.*', 'tipos_vehiculo.nombre as tipo_vehiculo_nombre')
-            ->get();
-        $ocupadosPorTipo = DB::table('tipos_vehiculo')
-            ->leftJoin('vehiculos', 'vehiculos.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-            ->join('bahias', 'bahias.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-            ->select(
-                'tipos_vehiculo.id',
-                'tipos_vehiculo.nombre',
-                'bahias.capacidad_maxima',
-                DB::raw('SUM(CASE WHEN vehiculos.estado_parqueo = 1 THEN 1 ELSE 0 END) as ocupados')
-            )
-            ->groupBy('tipos_vehiculo.id', 'tipos_vehiculo.nombre', 'bahias.capacidad_maxima')
+        $ocupacion = $this->parqueo->ocupacionPorTipo();
+
+        $stats = [
+            'capacidad' => $ocupacion->sum('capacidad'),
+            'ocupados' => $ocupacion->sum('ocupados'),
+            'libres' => $ocupacion->sum('libres'),
+            'entradas_hoy' => EntradaSalida::whereDate('fecha_entrada', today())->count(),
+            'salidas_hoy' => EntradaSalida::whereDate('fecha_salida', today())->count(),
+        ];
+
+        $dentro = EntradaSalida::with(['cliente', 'vehiculo.tipo'])
+            ->abiertas()
+            ->orderByDesc('fecha_entrada')
+            ->limit(8)
             ->get();
 
-        return view('vigilante.dashboard', compact('bahias', 'ocupadosPorTipo'));
+        return view('vigilante.dashboard', compact('ocupacion', 'stats', 'dentro'));
     }
-    #VISTA DE GESTION DE ENTRADAS Y SALIDAS
-    public function entradas_salidas()
-    {
-        $entradasSalidas = DB::table('entrada_salida')
-            ->join('clientes', 'entrada_salida.propietario', '=', 'clientes.id')
-            ->join('vehiculos', 'entrada_salida.vehiculo', '=', 'vehiculos.placa')
-            ->join('tipos_vehiculo', 'vehiculos.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-            ->select('entrada_salida.*', 'clientes.telefono', 'clientes.rol', 'tipos_vehiculo.nombre as tipo_vehiculo_nombre')
-            ->orderBy('entrada_salida.fecha_entrada', 'desc')
-            ->get();
 
-        return view('vigilante.entradas_salidas.vehicles', compact('entradasSalidas', ));
-    }
-    public function verificarUsuario(Request $request)
+    public function entradasSalidas(Request $request): View
     {
-        $id = $request->input('propietario');
-        $usuario = DB::table('clientes')->where('id', $id)->first();
+        $buscar = trim((string) $request->input('buscar'));
 
-        if (!$usuario) {
-            return response()->json([
-                'existe' => false,
-                'tipo_vehiculo' => collect()
-            ]);
+        $query = EntradaSalida::with(['cliente', 'vehiculo.tipo'])->orderByDesc('fecha_entrada');
+
+        if ($buscar !== '') {
+            $query->where(function ($q) use ($buscar) {
+                $q->where('vehiculo_id', 'like', "%{$buscar}%")
+                    ->orWhere('ticket', 'like', "%{$buscar}%")
+                    ->orWhereHas('cliente', function ($c) use ($buscar) {
+                        $c->where('nombre', 'like', "%{$buscar}%")
+                            ->orWhere('id', 'like', "%{$buscar}%");
+                    });
+            });
         }
 
+        $entradas = $query->paginate(15)->withQueryString();
 
-        $vehiculo = DB::table('vehiculos')
-            ->join('tipos_vehiculo', 'vehiculos.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-            ->where('vehiculos.propietario_id', $usuario->id)
-            ->select('vehiculos.*', 'tipos_vehiculo.nombre')
-            ->get();
-        $placas = DB::table('vehiculos')->where('propietario_id', $usuario->id)->pluck('placa')->filter()->values()->all();
+        return view('vigilante.entradas.index', compact('entradas', 'buscar'));
+    }
+
+    public function verificarCliente(Request $request): JsonResponse
+    {
+        $datos = $request->validate([
+            'propietario_id' => ['required', 'string', 'max:15'],
+        ]);
+
+        $cliente = Cliente::with(['vehiculos' => fn ($q) => $q->where('activo', true), 'vehiculos.tipo'])
+            ->find($datos['propietario_id']);
+
+        if (! $cliente) {
+            return response()->json(['existe' => false, 'mensaje' => 'Cliente no encontrado.']);
+        }
+
         return response()->json([
             'existe' => true,
-            'usuario' => $usuario,
-            'placas' => $placas,
-            'vehiculos' => $vehiculo
+            'cliente' => [
+                'id' => $cliente->id,
+                'nombre' => $cliente->nombre,
+                'activo' => $cliente->activo,
+                'rol_id' => $cliente->rol_id,
+            ],
+            'vehiculos' => $cliente->vehiculos->map(fn ($vehiculo) => [
+                'placa' => $vehiculo->placa,
+                'tipo' => $vehiculo->tipo?->nombre,
+                'etiqueta' => $vehiculo->placa.' · '.$vehiculo->tipo->nombre,
+            ])->values(),
         ]);
     }
-    public function verificarContrato(Request $request)
+
+    public function verificarContrato(Request $request): JsonResponse
     {
-        $placa = $request->vehiculo;
-        $fechaActual = now();
-
-        DB::table('contratos')->where('vehiculo_id', $placa)
-            ->where('estado_id', 1)
-            ->where('fecha_fin', '<=', $fechaActual)->update([
-                    'estado_id' => 3
-                ]);
-
-        $contratoActivo = DB::table('contratos')
-            ->where('vehiculo_id', $placa)
-            ->where('estado_id', 1)->count();
-        if ($contratoActivo > 0) {
-            return response()->json([
-                'existe' => true,
-            ]);
-        }
-        return response()->json([
-            'existe' => false,
+        $datos = $request->validate([
+            'vehiculo_id' => ['required', 'string', 'max:10', 'exists:vehiculos,placa'],
         ]);
-    }
-    public function registrarIngreso(Request $request)
-    {
-        $cliente = DB::table('clientes')->where('id', $request->propietario)->first();
-        $vehiculo = DB::table('vehiculos')->where('placa', $request->vehiculo)->first();
-        $vehiculosEnParqueo = DB::table('vehiculos')
-            ->where('estado_parqueo', 1)
-            ->where('tipo_vehiculo_id', $vehiculo->tipo_vehiculo_id)
-            ->count();
-        $bahia = DB::table('bahias')->where('tipo_vehiculo_id', $vehiculo->tipo_vehiculo_id)->first();
 
-        
-        $clienteTicket = DB::table('clientes')->where('id', $request->propietario)->first();
+        $existe = Contrato::where('vehiculo_id', $datos['vehiculo_id'])->vigentes()->exists();
 
-        if ($vehiculo->estado_parqueo == 1) {
-            return redirect()->route('vigilante.vehicles')->with('error', 'El vehiculo ya se encuentra en el parqueadero');
-        }
-
-        if ($vehiculosEnParqueo >= $bahia->capacidad_maxima) {
-            return redirect()->route('vigilante.vehicles')->with('error', 'No hay cupo disponible para este tipo de vehiculo');
-        }
-        $nuevaEntrada = DB::table('entrada_salida')->insertGetId(
-            [
-                'propietario' => $request->propietario,
-                'vehiculo' => $request->vehiculo
-            ]
-        );
-        DB::table('vehiculos')->where('placa', $request->vehiculo)->update(
-            [
-                'estado_parqueo' => 1,
-            ]
-        );
-
-        DB::table('bahias')->where('tipo_vehiculo_id', $vehiculo->tipo_vehiculo_id)->update(
-            [
-                'ocupada' => $vehiculosEnParqueo + 1,
-            ]
-        );
-
-        if ($cliente->rol === 1) {
-            $ticketsDisponible = DB::table('tickets_salida')->where('estado', 0)->pluck('id')->all();
-            if (count($ticketsDisponible) > 0) {
-                $ticketAleatorio = $ticketsDisponible[array_rand($ticketsDisponible)];
-                DB::table(table: 'entrada_salida')->where('id', $nuevaEntrada)->update([
-                    'ticket_salida' => $ticketAleatorio
-                ]);
-                DB::table('tickets_salida')->where('id', $ticketAleatorio)->update([
-                    'estado' => 1
-                ]);
-
-                $entrada=DB::table('entrada_salida')->where('id', $nuevaEntrada)->first();
-                return redirect()->route('vigilante.vehicles')->with('success', "Registro de ingreso satisfactorio. Ticket: {$entrada->ticket_salida}");
-            } else {
-                return redirect()->route('vigilante.vehicles')->with('error', 'No hay tickets disponibles');
-            }
-        }
-
-
-        return redirect()->route('vigilante.vehicles')->with('success', "Registro de ingreso satisfactorio. Ticket: {$clienteTicket->ticket_salida}");
-    }
-    public function registrarSalida(Request $request, $id, $placa,$propietario)
-    {
-        $salida= DB::table('entrada_salida')->where('id', $id)->first();
-        $cliente= DB::table('clientes')->where('id', $propietario)->first();
-
-        $vehiculo = DB::table('vehiculos')->where('placa', $placa)->first();
-        $vehiculosEnParqueo = DB::table('vehiculos')
-            ->where('estado_parqueo', 1)
-            ->where('tipo_vehiculo_id', $vehiculo->tipo_vehiculo_id)
-            ->count();
-        if($cliente->rol == 1){
-            if($request->ticket != $salida->ticket_salida){
-                return redirect()->route('vigilante.vehicles')->with('error', 'El ticket no coincide');
-            }
-            DB::table('tickets_salida')->where('id', $salida->ticket_salida)->update([
-                'estado'=>0
-            ]);
-            DB::table('entrada_salida')->where('id', $id)->update([
-                'ticket_salida'=>null
-            ]);
-        }
-        DB::table('entrada_salida')->where('id', $id)->update(
-            [
-                'fecha_salida' => now()->setTimezone('America/Bogota')
-            ]
-        );
-
-        DB::table('vehiculos')->where('placa', $placa)->update(
-            [
-                'estado_parqueo' => 0,
-            ]
-        );
-        DB::table('entrada_salida')->where('id', $id)->update(
-            [
-                'marcar_salida' => 1,
-            ]
-        );
-        DB::table('bahias')->where('tipo_vehiculo_id', $vehiculo->tipo_vehiculo_id)->update(
-            [
-                'ocupada' => $vehiculosEnParqueo - 1,
-            ]
-        );
-        return redirect()->route('vigilante.vehicles')->with('success', 'Registro de salida satisfactorio');
+        return response()->json(['existe' => $existe]);
     }
 
-    #VISTA DE GESTION DE VEHICULOS
-
-    public function gestion()
+    public function registrarIngreso(Request $request): RedirectResponse
     {
-        $vehiculos = DB::table('vehiculos')
-            ->join('tipos_vehiculo', 'vehiculos.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-            ->select('vehiculos.*', 'tipos_vehiculo.nombre as tipo_vehiculo_nombre')
-            ->orderBy('vehiculos.created_at')
-            ->get();
-        $tipos_vehiculo = DB::table('tipos_vehiculo')->get();
+        $datos = $request->validate([
+            'propietario_id' => ['required', 'string', 'max:15', 'exists:clientes,id'],
+            'vehiculo_id' => ['required', 'string', 'max:10', 'exists:vehiculos,placa'],
+        ]);
 
-        return view('vigilante.vehiculos.vehiculos', compact('vehiculos', 'tipos_vehiculo'));
+        $entrada = $this->parqueo->registrarIngreso(
+            Cliente::findOrFail($datos['propietario_id']),
+            Vehiculo::findOrFail($datos['vehiculo_id']),
+            $request->user()
+        );
+
+        return redirect()
+            ->route('vigilante.entradas')
+            ->with('success', 'Ingreso registrado. Ticket: '.$entrada->ticket);
+    }
+
+    public function registrarSalida(Request $request, EntradaSalida $entrada): RedirectResponse
+    {
+        $datos = $request->validate([
+            'ticket' => ['nullable', 'string', 'max:20'],
+        ]);
+
+        $this->parqueo->registrarSalida($entrada, $datos['ticket'] ?? null, $request->user());
+
+        return redirect()
+            ->route('vigilante.entradas')
+            ->with('success', 'Salida registrada correctamente.');
+    }
+
+    public function vehiculos(Request $request): View
+    {
+        $buscar = trim((string) $request->input('buscar'));
+
+        $query = Vehiculo::with(['tipo', 'propietario'])->orderBy('placa');
+
+        if ($buscar !== '') {
+            $query->where(function ($q) use ($buscar) {
+                $q->where('placa', 'like', "%{$buscar}%")
+                    ->orWhere('propietario_id', 'like', "%{$buscar}%")
+                    ->orWhereHas('propietario', fn ($p) => $p->where('nombre', 'like', "%{$buscar}%"));
+            });
+        }
+
+        $vehiculos = $query->paginate(15)->withQueryString();
+
+        return view('vigilante.vehiculos.index', compact('vehiculos', 'buscar'));
     }
 }

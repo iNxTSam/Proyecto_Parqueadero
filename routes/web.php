@@ -1,100 +1,73 @@
 <?php
 
-use App\Http\Controllers\Login;
-use App\Http\Controllers\Logout;
-use App\Http\Controllers\Register;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\VigilanteController;
-use App\Http\Controllers\AdminController;
+use Illuminate\Support\Facades\Route;
 
+Route::get('/', [LoginController::class, 'show'])->name('login');
+Route::post('/logging', [LoginController::class, 'login'])
+    ->middleware('throttle:5,1')
+    ->name('login.post');
+Route::post('/logout', [LoginController::class, 'logout'])
+    ->middleware('auth')
+    ->name('logout');
 
-Route::get('/', function () {
-    return view('login');
-})->name('login');
-
-Route::get('/registro', [Register::class, 'view'])->name('register');
-Route::post('/logging', [Login::class, 'loginUser'])->name('loginUsuario');
-// Route::post('/usuarios', [Register::class, 'crear'])->name('registrarUsuario');
-
-Route::post('/logout', [Logout::class, 'logout'])->name('logout');
-
-
-//  RUTAS DEL VIGILANTE
-
-Route::middleware(['auth', 'rol_id:3', 'no-cache'])->prefix('vigilante')->name('vigilante.')->group(function () {
-
-
+// Vigilante
+Route::middleware(['auth', 'role:3', 'no-cache'])->prefix('vigilante')->name('vigilante.')->group(function () {
     Route::get('/', [VigilanteController::class, 'dashboard'])->name('dashboard');
-    Route::get('/entradas-salidas', [VigilanteController::class, 'entradas_salidas'])->name('vehicles');
-    Route::post('/entradas-salidas/registrarIngreso', [VigilanteController::class, 'registrarIngreso'])->name('registrarIngreso');
-    Route::put('/entradas-salidas/registrarSalida/{id}/{placa}/{propietario}', [VigilanteController::class, 'registrarSalida'])->name('registrarSalida');
-    Route::post('/entradas-salidas/verificar-usuario', [VigilanteController::class, 'verificarUsuario'])->name('verificarUsuario');
-    Route::post('/entradas-salidas/verificar-contrato', [VigilanteController::class, 'verificarContrato'])->name('verificarContrato');
-
-    Route::get('/vehiculos', [VigilanteController::class, 'gestion'])->name('gestionvehiculos');
+    Route::get('/entradas-salidas', [VigilanteController::class, 'entradasSalidas'])->name('entradas');
+    Route::post('/entradas-salidas', [VigilanteController::class, 'registrarIngreso'])->name('entradas.store');
+    Route::put('/entradas-salidas/{entrada}/salida', [VigilanteController::class, 'registrarSalida'])->name('entradas.salida');
+    Route::post('/verificar-cliente', [VigilanteController::class, 'verificarCliente'])->name('verificarCliente');
+    Route::post('/verificar-contrato', [VigilanteController::class, 'verificarContrato'])->name('verificarContrato');
+    Route::get('/vehiculos', [VigilanteController::class, 'vehiculos'])->name('vehiculos');
 });
 
+// Administrador
+Route::middleware(['auth', 'role:2', 'no-cache'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
 
-//  RUTAS DEL SUPER ADMIN
+    Route::get('/usuarios', [AdminController::class, 'usuarios'])->name('usuarios');
+    Route::post('/usuarios', [AdminController::class, 'storeUsuario'])->name('usuarios.store');
+    Route::put('/usuarios/{usuario}', [AdminController::class, 'updateUsuario'])->name('usuarios.update');
+    Route::patch('/usuarios/{usuario}/toggle', [AdminController::class, 'toggleUsuario'])->name('usuarios.toggle');
 
-Route::middleware(['auth', 'rol_id:1', 'no-cache'])->prefix('superadmin')->name('superadmin.')->group(function () {
+    Route::get('/contratos', [AdminController::class, 'contratos'])->name('contratos');
+    Route::post('/contratos', [AdminController::class, 'storeContrato'])->name('contratos.store');
+    Route::put('/contratos/{contrato}', [AdminController::class, 'updateContrato'])->name('contratos.update');
+    Route::post('/contratos/{contrato}/renovar', [AdminController::class, 'renovarContrato'])->name('contratos.renovar');
+    Route::post('/contratos/verificar-usuario', [AdminController::class, 'verificarUsuario'])->name('contratos.verificarUsuario');
 
-    // Dashboard
+    Route::get('/clientes', [AdminController::class, 'clientes'])->name('clientes');
+    Route::post('/clientes', [AdminController::class, 'storeCliente'])->name('clientes.store');
+    Route::put('/clientes/{cliente}', [AdminController::class, 'updateCliente'])->name('clientes.update');
+
+    Route::get('/vehiculos', [AdminController::class, 'vehiculos'])->name('vehiculos');
+    Route::post('/vehiculos', [AdminController::class, 'storeVehiculo'])->name('vehiculos.store');
+    Route::put('/vehiculos/{vehiculo}', [AdminController::class, 'updateVehiculo'])->name('vehiculos.update');
+});
+
+// Superadministrador
+Route::middleware(['auth', 'role:1', 'no-cache'])->prefix('superadmin')->name('superadmin.')->group(function () {
     Route::get('/dashboard', [SuperAdminController::class, 'dashboard'])->name('dashboard');
 
-    // Tarifas
     Route::get('/tarifas', [SuperAdminController::class, 'tarifas'])->name('tarifas');
     Route::post('/tarifas', [SuperAdminController::class, 'storeTarifa'])->name('tarifas.store');
-    Route::put('/tarifas/{id}', [SuperAdminController::class, 'updateTarifa'])->name('tarifas.update');
-    Route::delete('/tarifas/eliminar/{id}', [SuperAdminController::class, 'deleteTarifa'])->name('tarifas.delete');
+    Route::put('/tarifas/{tarifa}', [SuperAdminController::class, 'updateTarifa'])->name('tarifas.update');
+    Route::delete('/tarifas/{tarifa}', [SuperAdminController::class, 'deleteTarifa'])->name('tarifas.delete');
 
-    // Bahías
     Route::get('/bahias', [SuperAdminController::class, 'bahias'])->name('bahias');
     Route::post('/bahias', [SuperAdminController::class, 'storeBahia'])->name('bahias.store');
-    Route::put('/bahias/{id}', [SuperAdminController::class, 'updateBahia'])->name('bahias.update');
-    Route::delete('/bahias/eliminar/{id}', [SuperAdminController::class, 'deleteBahia'])->name('bahias.delete');
+    Route::put('/bahias/{bahia}', [SuperAdminController::class, 'updateBahia'])->name('bahias.update');
+    Route::delete('/bahias/{bahia}', [SuperAdminController::class, 'deleteBahia'])->name('bahias.delete');
 
-    // Reportes
     Route::get('/reportes', [SuperAdminController::class, 'reportes'])->name('reportes');
     Route::post('/reportes/generar', [SuperAdminController::class, 'generarReporte'])->name('reportes.generar');
 
-    // Configuración
     Route::get('/configuracion', [SuperAdminController::class, 'configuracion'])->name('configuracion');
-    Route::post('/configuracion/tipo-vehiculo', [SuperAdminController::class, 'storeTipoVehiculo'])->name('configuracion.tipoVehiculo');
-    Route::patch('/configuracion/tipo-vehiculo/update/{id}', [SuperAdminController::class, 'updateTipoVehiculo'])->name('configuracion.tipoVehiculo.update');
+    Route::post('/configuracion/tipo-vehiculo', [SuperAdminController::class, 'storeTipoVehiculo'])->name('configuracion.tipoVehiculo.store');
+    Route::put('/configuracion/tipo-vehiculo/{tipoVehiculo}', [SuperAdminController::class, 'updateTipoVehiculo'])->name('configuracion.tipoVehiculo.update');
+    Route::delete('/configuracion/tipo-vehiculo/{tipoVehiculo}', [SuperAdminController::class, 'deleteTipoVehiculo'])->name('configuracion.tipoVehiculo.delete');
 });
-
-
-//  RUTAS DEL ADMINISTRADOR
-
-Route::middleware(['auth', 'rol_id:2', 'no-cache'])->prefix('admin')->name('admin.')->group(function () {
-
-    // Dashboard
-    Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
-
-    // Usuarios
-    Route::get('/usuarios', [AdminController::class, 'usuarios'])->name('usuarios');
-    Route::post('/usuarios', [AdminController::class, 'storeUsuario'])->name('usuarios.store');
-    Route::put('/usuarios/{id}', [AdminController::class, 'updateUsuario'])->name('usuarios.update');
-    Route::patch('/usuarios/{id}/toggle', [AdminController::class, 'toggleUsuario'])->name('usuarios.toggle');
-
-    // Contratos
-    Route::get('/contratos', [AdminController::class, 'contratos'])->name('contratos');
-    Route::post('/contratos', [AdminController::class, 'storeContrato'])->name('contratos.store');
-    Route::put('/contratos/{id}', [AdminController::class, 'updateContrato'])->name('contratos.update');
-    Route::post('/contratos/{id}/renovar', [AdminController::class, 'renovarContrato'])->name('contratos.renovar');
-    Route::post('/contratos/verificar-usuario', [AdminController::class, 'verificarUsuario'])->name('verificarUsuario');
-
-
-    // Clientes
-    Route::get('/clientes', [AdminController::class, 'clientes'])->name('clientes');
-    Route::post('/clientes', [AdminController::class, 'storeCliente'])->name('clientes.store');
-    Route::put('/clientes/{id}', [AdminController::class, 'updateCliente'])->name('clientes.update');
-
-    // Vehiculos
-    Route::get('/vehiculos', [AdminController::class, 'gestion'])->name('gestionvehiculos');
-    Route::post('/vehiculos', [AdminController::class, 'nuevoVehiculo'])->name('nuevo.vehiculo');
-    Route::put('/vehiculos/{id}', [AdminController::class, 'updateVehiculo'])->name('update.vehiculo');
-});
-

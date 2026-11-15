@@ -2,383 +2,230 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use function Laravel\Prompts\alert;
-use function Laravel\Prompts\table;
+use App\Exceptions\BusinessRuleException;
+use App\Http\Requests\ReporteRequest;
+use App\Http\Requests\StoreBahiaRequest;
+use App\Http\Requests\StoreTarifaRequest;
+use App\Http\Requests\TipoVehiculoRequest;
+use App\Http\Requests\UpdateBahiaRequest;
+use App\Http\Requests\UpdateTarifaRequest;
+use App\Models\Bahia;
+use App\Models\Cliente;
+use App\Models\Contrato;
+use App\Models\Recibo;
+use App\Models\Reporte;
+use App\Models\Tarifa;
+use App\Models\TipoVehiculo;
+use App\Models\Usuario;
+use App\Models\Vehiculo;
+use App\Services\ParqueoService;
+use App\Services\ReporteService;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SuperAdminController extends Controller
 {
-    // Dashboard principal
-    public function dashboard()
+    public function __construct(
+        private readonly ParqueoService $parqueo,
+        private readonly ReporteService $reportes
+    ) {}
+
+    public function dashboard(): View
     {
         $stats = [
-            'total_usuarios' => DB::table('usuarios')->count(),
-            'total_clientes' => DB::table('clientes')->count(),
-            'total_vehiculos' => DB::table('vehiculos')->count(),
-            'bahias_ocupadas' => DB::table('bahias')->where('ocupada', true)->count(),
-            'total_bahias' => DB::table('bahias')->count(),
-            'contratos_activos' => DB::table('contratos')
-                ->join('estados_contrato', 'contratos.estado_id', '=', 'estados_contrato.id')
-                ->where('estados_contrato.nombre', 'activo')
-                ->count(),
-            'ingresos_mes' => DB::table('recibos')
-                ->whereMonth('created_at', now()->month)
-                ->sum('valor')
+            'usuarios' => Usuario::count(),
+            'clientes' => Cliente::count(),
+            'vehiculos' => Vehiculo::count(),
+            'contratos_activos' => Contrato::vigentes()->count(),
+            'facturado_mes' => Recibo::whereMonth('fecha_emision', today()->month)
+                ->whereYear('fecha_emision', today()->year)
+                ->sum('valor'),
+            'pendiente' => Recibo::where('estado', 'pendiente')->sum('valor'),
         ];
 
-        $ocupacion_por_tipo = DB::table('bahias')
-            ->join('tipos_vehiculo', 'bahias.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-            ->leftJoin('vehiculos', 'tipos_vehiculo.id', '=', 'vehiculos.tipo_vehiculo_id')
-            ->select(
-                'tipos_vehiculo.nombre',
-                'bahias.capacidad_maxima',
-                DB::raw('COUNT(vehiculos.placa) as total_vehiculos'),
-                DB::raw('SUM(CASE WHEN vehiculos.estado_parqueo = 1 THEN 1 ELSE 0 END) as vehiculos_en_parqueo'),
-                DB::raw('SUM(CASE WHEN ocupada = 1 THEN 1 ELSE 0 END) as ocupadas')
-            )
-            ->groupBy('bahias.capacidad_maxima', 'tipos_vehiculo.id', 'tipos_vehiculo.nombre')
-            ->get();
+        $ocupacion = $this->parqueo->ocupacionPorTipo();
+        $reportes = Reporte::with('generadoPor')->latest()->limit(5)->get();
 
-        return view('superadmin.dashboard', compact('stats', 'ocupacion_por_tipo'));
+        return view('superadmin.dashboard', compact('stats', 'ocupacion', 'reportes'));
     }
 
-    // GESTIÓN DE TARIFAS
-    public function tarifas()
+    public function tarifas(): View
     {
-        $tarifas = DB::table('tarifas')
-            ->join('tipos_vehiculo', 'tarifas.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-            ->select('tarifas.*', 'tipos_vehiculo.nombre as tipo_vehiculo_nombre')
-            ->orderBy('tarifas.created_at', 'desc')
-            ->get();
+        $tarifas = Tarifa::with('tipoVehiculo')->orderBy('nombre')->paginate(15);
+        $tipos = TipoVehiculo::orderBy('nombre')->get();
 
-        $tipos_vehiculo = DB::table('tipos_vehiculo')->get();
-
-        return view('superadmin.tarifas.index', compact('tarifas', 'tipos_vehiculo'));
+        return view('superadmin.tarifas.index', compact('tarifas', 'tipos'));
     }
 
-    public function storeTarifa(Request $request)
+    public function storeTarifa(StoreTarifaRequest $request): RedirectResponse
     {
+        Tarifa::create($request->validated() + ['activa' => $request->boolean('activa', true)]);
 
-        if (!$request->nombre || !$request->tipo || !$request->tipo_vehiculo_id || !$request->valor) {
-            return redirect()->route('superadmin.tarifas')->with('error', 'Por favor llene todos los campos');
+        return redirect()->route('superadmin.tarifas')->with('success', 'Tarifa creada correctamente.');
+    }
+
+    public function updateTarifa(UpdateTarifaRequest $request, Tarifa $tarifa): RedirectResponse
+    {
+        $tarifa->update($request->validated() + ['activa' => $request->boolean('activa')]);
+
+        return redirect()->route('superadmin.tarifas')->with('success', 'Tarifa actualizada correctamente.');
+    }
+
+    public function deleteTarifa(Tarifa $tarifa): RedirectResponse
+    {
+        if (Contrato::where('tarifa_id', $tarifa->id)->exists()) {
+            throw new BusinessRuleException('No puedes eliminar una tarifa que ya tiene contratos. Desactívala en su lugar.');
         }
 
-        DB::table('tarifas')->insert([
-            'nombre' => $request->nombre,
-            'tipo' => $request->tipo,
-            'tipo_vehiculo_id' => $request->tipo_vehiculo_id,
-            'valor' => $request->valor,
-            'activa' => true,
-            'created_at' => now(),
-            'updated_at' => now()
-        ]);
+        $tarifa->delete();
 
-        return redirect()->route('superadmin.tarifas')->with('success', 'Tarifa creada exitosamente');
+        return redirect()->route('superadmin.tarifas')->with('success', 'Tarifa eliminada correctamente.');
     }
 
-    public function updateTarifa(Request $request, $id)
+    public function bahias(): View
     {
-        $request->validate([
-            'nombre' => 'required|string|max:50',
-            'tipo' => 'required|string|max:20',
-            'tipo_vehiculo_id' => 'required|exists:tipos_vehiculo,id',
-            'valor' => 'required|numeric|min:0',
-            'activa' => 'nullable|boolean'
-        ]);
+        $bahias = Bahia::with('tipoVehiculo')->orderBy('numero')->paginate(15);
+        $tipos = TipoVehiculo::orderBy('nombre')->get();
 
-        DB::table('tarifas')->where('id', $id)->update([
-            'nombre' => $request->nombre,
-            'tipo' => $request->tipo,
-            'tipo_vehiculo_id' => $request->tipo_vehiculo_id,
-            'valor' => $request->valor,
-            'activa' => $request->boolean('activa'),
-            'updated_at' => now()
-        ]);
+        $ocupados = Vehiculo::where('estado_parqueo', true)
+            ->selectRaw('tipo_vehiculo_id, COUNT(*) as total')
+            ->groupBy('tipo_vehiculo_id')
+            ->pluck('total', 'tipo_vehiculo_id');
 
-        return redirect()->route('superadmin.tarifas')->with('success', 'Tarifa actualizada exitosamente');
-    }
-    public function deleteTarifa(Request $request, $id)
-    {
-        DB::table('tarifas')->where('id', $id)->delete();
-        return redirect()->route('superadmin.tarifas')->with('success', 'Tarifa eliminada exitosamente');
+        return view('superadmin.bahias.index', compact('bahias', 'tipos', 'ocupados'));
     }
 
-
-    // GESTIÓN DE BAHÍAS
-    public function bahias()
+    public function storeBahia(StoreBahiaRequest $request): RedirectResponse
     {
-        $bahias = DB::table('bahias')
-            ->join('tipos_vehiculo', 'bahias.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-            ->select('bahias.*', 'tipos_vehiculo.nombre as tipo_vehiculo_nombre')
-            ->orderBy('bahias.numero')
-            ->get();
-        $vehiculos = DB::table('vehiculos')->get();
+        Bahia::create($request->validated() + ['activa' => $request->boolean('activa', true)]);
 
-        $tipos_vehiculo = DB::table('tipos_vehiculo')->get();
-
-        return view('superadmin.bahias.index', compact('bahias', 'tipos_vehiculo'));
+        return redirect()->route('superadmin.bahias')->with('success', 'Bahía creada correctamente.');
     }
 
-    public function storeBahia(Request $request)
+    public function updateBahia(UpdateBahiaRequest $request, Bahia $bahia): RedirectResponse
     {
-        if (!$request->numero || !$request->tipo_vehiculo_id || !$request->capacidad_maxima) {
-            return redirect()->route('superadmin.bahias')->with('Error', 'Por favor llene todos los campos');
+        $bahia->update($request->validated() + ['activa' => $request->boolean('activa')]);
+
+        return redirect()->route('superadmin.bahias')->with('success', 'Bahía actualizada correctamente.');
+    }
+
+    public function deleteBahia(Bahia $bahia): RedirectResponse
+    {
+        $hayParqueados = Vehiculo::where('tipo_vehiculo_id', $bahia->tipo_vehiculo_id)
+            ->where('estado_parqueo', true)
+            ->exists();
+
+        if ($hayParqueados) {
+            throw new BusinessRuleException('No puedes eliminar una bahía con vehículos dentro. Espera a que salgan o desactívala.');
         }
-        DB::table('bahias')->insert([
-            'numero' => $request->numero,
-            'tipo_vehiculo_id' => $request->tipo_vehiculo_id,
-            'capacidad_maxima' => $request->capacidad_maxima,
-            'ubicacion' => $request->ubicacion,
-            'ocupada' => false,
-            'activa' => true,
-            'created_at' => now(),
-            'updated_at' => now()
-        ]);
 
-        return redirect()->route('superadmin.bahias')->with('success', 'Bahía creada exitosamente');
+        $bahia->delete();
+
+        return redirect()->route('superadmin.bahias')->with('success', 'Bahía eliminada correctamente.');
     }
 
-    public function updateBahia(Request $request, $id)
+    public function reportes(): View
     {
-        $request->validate([
-            'numero' => 'required|string|max:10|unique:bahias,numero,' . $id,
-            'tipo_vehiculo_id' => 'required|exists:tipos_vehiculo,id',
-            'capacidad_maxima' => 'required|integer|min:1',
-            'ubicacion' => 'nullable|string|max:100',
-            'activa' => 'boolean'
+        return view('superadmin.reportes.index', [
+            'tipos' => ReporteService::TIPOS,
+            'recientes' => Reporte::with('generadoPor')->latest()->limit(8)->get(),
         ]);
-
-        DB::table('bahias')->where('id', $id)->update([
-            'numero' => $request->numero,
-            'tipo_vehiculo_id' => $request->tipo_vehiculo_id,
-            'capacidad_maxima' => $request->capacidad_maxima,
-            'ubicacion' => $request->ubicacion,
-            'activa' => $request->has('activa'),
-            'updated_at' => now()
-        ]);
-
-        return redirect()->route('superadmin.bahias')->with('success', 'Bahía actualizada exitosamente');
     }
 
-    public function deleteBahia(Request $request, $id)
+    public function generarReporte(ReporteRequest $request): StreamedResponse|Response
     {
-        DB::table('bahias')->where('id', $id)->delete();
+        $datos = $request->validated();
+        $tipo = $datos['tipo_reporte'];
+        $formato = $datos['formato'];
+        $desde = $datos['fecha_inicio'] ?? null;
+        $hasta = $datos['fecha_fin'] ?? null;
 
-        return redirect()->route('superadmin.bahias')->with('success', 'Bahía eliminada correctamente');
-    }
+        $filas = $this->reportes->datos($tipo, $desde, $hasta);
+        $nombre = 'reporte_'.$tipo.'_'.now()->format('Ymd_His').'.'.$formato;
 
-    // REPORTES
-    public function reportes()
-    {
-        return view('superadmin.reportes.index');
-    }
-
-    public function generarReporte(Request $request)
-    {
-        $request->validate([
-            'tipo_reporte' => 'required|in:ocupacion,ingresos,contratos,usuarios',
-            'formato' => 'required|in:csv,pdf',
-            'fecha_inicio' => 'nullable|date',
-            'fecha_fin' => 'nullable|date|after_or_equal:fecha_inicio'
+        Reporte::create([
+            'nombre' => 'Reporte de '.mb_strtolower(ReporteService::TIPOS[$tipo]),
+            'tipo' => $tipo,
+            'formato' => strtoupper($formato),
+            'parametros' => ['fecha_inicio' => $desde, 'fecha_fin' => $hasta, 'filas' => $filas->count()],
+            'generado_por_id' => Auth::id(),
         ]);
 
-        $data = $this->obtenerDatosReporte($request->tipo_reporte, $request->fecha_inicio, $request->fecha_fin);
-
-        if ($request->formato === 'csv') {
-            return $this->exportarCSV($data, $request->tipo_reporte);
-        } else {
-            return $this->exportarPDF($data, $request->tipo_reporte);
+        if ($formato === 'csv') {
+            return $this->exportarCsv($filas, $tipo, $nombre);
         }
+
+        return Pdf::loadView('superadmin.reportes.pdf', ['filas' => $filas, 'tipo' => $tipo])
+            ->download($nombre);
     }
 
-    private function obtenerDatosReporte($tipo, $fecha_inicio = null, $fecha_fin = null)
+    public function configuracion(): View
     {
-        switch ($tipo) {
-            case 'ocupacion':
-                return DB::table('bahias')
-                    ->join('tipos_vehiculo', 'bahias.tipo_vehiculo_id', '=', 'tipos_vehiculo.id')
-                    ->leftJoin('tickets', function ($join) {
-                        $join->on('bahias.id', '=', 'tickets.bahia_id')
-                            ->where('tickets.estado', '=', 'activo');
-                    })
-                    ->leftJoin('vehiculos', 'tickets.vehiculo_id', '=', 'vehiculos.id')
-                    ->select(
-                        'bahias.numero',
-                        'bahias.ubicacion',
-                        'tipos_vehiculo.nombre as tipo_vehiculo',
-                        'bahias.ocupada',
-                        'vehiculos.placa'
-                    )
-                    ->get();
+        $tipos = TipoVehiculo::withCount(['vehiculos', 'bahias', 'tarifas'])->orderBy('nombre')->get();
 
-            case 'ingresos':
-                $query = DB::table('recibos')
-                    ->join('contratos', 'recibos.contrato_id', '=', 'contratos.id')
-                    ->join('vehiculos', 'contratos.vehiculo_id', '=', 'vehiculos.id')
-                    ->select(
-                        'recibos.numero',
-                        'recibos.fecha_emision',
-                        'recibos.valor',
-                        'vehiculos.placa',
-                        'recibos.estado'
-                    );
-
-                if ($fecha_inicio) {
-                    $query->whereDate('recibos.fecha_emision', '>=', $fecha_inicio);
-                }
-                if ($fecha_fin) {
-                    $query->whereDate('recibos.fecha_emision', '<=', $fecha_fin);
-                }
-
-                return $query->get();
-
-            case 'contratos':
-                return DB::table('contratos')
-                    ->join('vehiculos', 'contratos.vehiculo_id', '=', 'vehiculos.id')
-                    ->join('usuarios', 'vehiculos.propietario_id', '=', 'usuarios.id')
-                    ->join('tarifas', 'contratos.tarifa_id', '=', 'tarifas.id')
-                    ->join('estados_contrato', 'contratos.estado_id', '=', 'estados_contrato.id')
-                    ->select(
-                        'vehiculos.placa',
-                        'usuarios.nombre as propietario',
-                        'contratos.fecha_inicio',
-                        'contratos.fecha_fin',
-                        'tarifas.nombre as tarifa',
-                        'estados_contrato.nombre as estado',
-                        'contratos.valor_total'
-                    )
-                    ->get();
-
-            case 'usuarios':
-                return DB::table('usuarios')
-                    ->join('roles', 'usuarios.rol_id', '=', 'roles.id')
-                    ->select(
-                        'usuarios.nombre',
-                        'usuarios.cedula',
-                        'usuarios.email',
-                        'roles.nombre as rol',
-                        'usuarios.activo',
-                        'usuarios.created_at'
-                    )
-                    ->get();
-
-            default:
-                return collect();
-        }
-    }
-
-    private function exportarCSV($data, $tipo_reporte)
-    {
-        $filename = "reporte_{$tipo_reporte}_" . date('Y-m-d_H-i-s') . '.csv';
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => "attachment; filename=\"$filename\"",
+        $resumen = [
+            'capacidad_total' => Bahia::where('activa', true)->sum('capacidad_maxima'),
+            'tarifas_activas' => Tarifa::where('activa', true)->count(),
+            'usuarios_por_rol' => Usuario::selectRaw('rol_id, COUNT(*) as total')
+                ->groupBy('rol_id')
+                ->with('rol')
+                ->get(),
         ];
 
-        $callback = function () use ($data, $tipo_reporte) {
-            $file = fopen('php://output', 'w');
+        return view('superadmin.configuracion.index', compact('tipos', 'resumen'));
+    }
 
-            // Encabezados según el tipo de reporte
-            switch ($tipo_reporte) {
-                case 'ocupacion':
-                    fputcsv($file, ['Bahía', 'Ubicación', 'Tipo Vehículo', 'Ocupada', 'Placa']);
-                    break;
-                case 'ingresos':
-                    fputcsv($file, ['Número Recibo', 'Fecha', 'Valor', 'Placa', 'Estado']);
-                    break;
-                case 'contratos':
-                    fputcsv($file, ['Placa', 'Propietario', 'Fecha Inicio', 'Fecha Fin', 'Tarifa', 'Estado', 'Valor Total']);
-                    break;
-                case 'usuarios':
-                    fputcsv($file, ['Nombre', 'Cédula', 'Email', 'Rol', 'Activo', 'Fecha Registro']);
-                    break;
+    public function storeTipoVehiculo(TipoVehiculoRequest $request): RedirectResponse
+    {
+        TipoVehiculo::create($request->validated());
+
+        return redirect()->route('superadmin.configuracion')->with('success', 'Tipo de vehículo creado correctamente.');
+    }
+
+    public function updateTipoVehiculo(TipoVehiculoRequest $request, TipoVehiculo $tipoVehiculo): RedirectResponse
+    {
+        $tipoVehiculo->update($request->validated());
+
+        return redirect()->route('superadmin.configuracion')->with('success', 'Tipo de vehículo actualizado correctamente.');
+    }
+
+    public function deleteTipoVehiculo(TipoVehiculo $tipoVehiculo): RedirectResponse
+    {
+        $enUso = $tipoVehiculo->vehiculos()->exists()
+            || $tipoVehiculo->bahias()->exists()
+            || $tipoVehiculo->tarifas()->exists();
+
+        if ($enUso) {
+            throw new BusinessRuleException('No puedes eliminar un tipo de vehículo que tiene vehículos, bahías o tarifas asociadas.');
+        }
+
+        $tipoVehiculo->delete();
+
+        return redirect()->route('superadmin.configuracion')->with('success', 'Tipo de vehículo eliminado correctamente.');
+    }
+
+    /**
+     * @param  Collection<int, \stdClass>  $filas
+     */
+    private function exportarCsv(Collection $filas, string $tipo, string $nombre): StreamedResponse
+    {
+        $encabezados = $this->reportes->encabezados($tipo);
+
+        return response()->streamDownload(function () use ($filas, $encabezados) {
+            $salida = fopen('php://output', 'w');
+            fwrite($salida, "\xEF\xBB\xBF");
+            fputcsv($salida, $encabezados);
+
+            foreach ($filas as $fila) {
+                fputcsv($salida, array_values((array) $fila));
             }
 
-            foreach ($data as $row) {
-                fputcsv($file, (array) $row);
-            }
-
-            fclose($file);
-        };
-
-        // Registrar reporte generado
-        DB::table('reportes')->insert([
-            'nombre' => "Reporte de {$tipo_reporte}",
-            'tipo' => $tipo_reporte,
-            'formato' => 'CSV',
-            'generado_por' => 1,
-            'created_at' => now()
-        ]);
-
-        return response()->stream($callback, 200, $headers);
-    }
-
-    private function exportarPDF($data, $tipo_reporte)
-    {
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('superadmin.reportes.pdf', [
-            'data' => $data,
-            'tipo' => $tipo_reporte
-        ]);
-
-        $filename = "reporte_{$tipo_reporte}_" . date('Y-m-d_H-i-s') . '.pdf';
-
-        // Registrar el reporte en la BD
-        DB::table('reportes')->insert([
-            'nombre' => "Reporte de {$tipo_reporte}",
-            'tipo' => $tipo_reporte,
-            'formato' => 'PDF',
-            'generado_por' => DB::table('usuarios')->where('rol_id', 1)->value('id'),
-            'created_at' => now()
-        ]);
-
-        return $pdf->download($filename);
-    }
-
-
-    // CONFIGURACIÓN GLOBAL
-    public function configuracion()
-    {
-        $configuraciones = [
-            'capacidad_total' => DB::table('bahias')->sum('capacidad_maxima'),
-            'tipos_vehiculo' => DB::table('tipos_vehiculo')->get(),
-            'tarifas_activas' => DB::table('tarifas')->where('activa', true)->count(),
-            'usuarios_por_rol' => DB::table('usuarios')
-                ->join('roles', 'usuarios.rol_id', '=', 'roles.id')
-                ->select('roles.nombre', DB::raw('COUNT(*) as total'))
-                ->groupBy('roles.id', 'roles.nombre')
-                ->get()
-        ];
-
-        return view('superadmin.configuracion.index', compact('configuraciones'));
-    }
-
-    public function storeTipoVehiculo(Request $request)
-    {
-        $request->validate([
-            'nombre' => 'required|string|max:50|unique:tipos_vehiculo,nombre',
-            'descripcion' => 'nullable|string|max:255'
-        ]);
-
-        DB::table('tipos_vehiculo')->insert([
-            'nombre' => $request->nombre,
-            'descripcion' => $request->descripcion,
-            'created_at' => now()
-        ]);
-
-        return redirect()->route('superadmin.configuracion')->with('success', 'Tipo de vehículo creado exitosamente');
-    }
-
-    public function updateTipoVehiculo(Request $request, $id)
-    {
-        if (!$request->nombre) {
-            return redirect()->route('superadmin.configuracion')->with('error', 'Por favor llene todos los campos');
-        }
-        DB::table('tipos_vehiculo')->where('id', $id)->update([
-            'nombre' => $request->nombre,
-            'descripcion' => $request->descripcion
-        ]);
-
-        return redirect()->route('superadmin.configuracion')->with('success', 'Tipo de vehiculo eliminada correctamente');
+            fclose($salida);
+        }, $nombre, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 }

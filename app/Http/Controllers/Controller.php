@@ -2,9 +2,4 @@
 
 namespace App\Http\Controllers;
 
-abstract class Controller
-{
-    public function bahias (){
-        
-    }
-}
+abstract class Controller {}

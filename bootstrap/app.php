@@ -1,8 +1,12 @@
 <?php
 
+use App\Exceptions\BusinessRuleException;
+use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\NoCacheMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -12,16 +16,16 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'rol_id' => \App\Http\Middleware\SuperAdminMiddleware::class,
-            'no-cache' => \App\Http\Middleware\NoCacheMiddleware::class,
-            'superadmin' => \App\Http\Middleware\SuperAdminMiddleware::class,
-        ]);
-        $middleware->validateCsrfTokens(except: [
-            // **Reemplaza 'tu/ruta/creacion' con la URI exacta de tu endpoint POST**
-            // Por ejemplo: 'register', 'crear-usuario', etc.
-            'http://127.0.0.1:8000/usuarios', 
+            'role' => EnsureRole::class,
+            'no-cache' => NoCacheMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (BusinessRuleException $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return back()->withInput()->with('error', $e->getMessage());
+        });
     })->create();
