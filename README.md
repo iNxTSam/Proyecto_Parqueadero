@@ -6,7 +6,7 @@ Aplicación web para administrar la operación de un parqueadero: entradas y sal
 
 | Componente | Tecnología |
 | --- | --- |
-| Backend | PHP 8.2+ · Laravel 12 |
+| Backend | PHP 8.3+ · Laravel 12 |
 | Base de datos | MySQL 8 (SQLite para pruebas) |
 | Frontend | Blade · Bootstrap 5 · Vite 7 |
 | Reportes | DomPDF y CSV |
@@ -46,7 +46,7 @@ Aplicación web para administrar la operación de un parqueadero: entradas y sal
 
 ## Requisitos
 
-- PHP 8.2 o superior con `pdo_mysql` y `mbstring`.
+- PHP 8.3 o superior con `pdo_mysql` y `mbstring`.
 - Composer 2.
 - Node.js 20 o superior.
 - MySQL 8 (o Docker para levantarlo con el `docker-compose.yml` incluido).
@@ -120,7 +120,7 @@ npm run build
 - **47 pruebas** de feature sobre autenticación, permisos, CRUD, contratos, parqueo y reportes.
 - Las pruebas usan SQLite en memoria, por lo que no requieren MySQL.
 - Larastan analiza `app/` en nivel 6.
-- El pipeline de GitHub Actions ejecuta pruebas en PHP 8.2–8.5, migraciones sobre MySQL 8, análisis estático, build de assets y auditoría de dependencias.
+- El pipeline de GitHub Actions ejecuta pruebas en PHP 8.3–8.5, migraciones sobre MySQL 8, análisis estático, build de assets y auditoría de dependencias.
 
 ## Seguridad
 
